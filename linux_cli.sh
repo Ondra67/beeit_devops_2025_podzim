@@ -16,7 +16,7 @@
 
 LOG_MODE="stdout"
 LOG_FILE="linux_cli.log"
- 
+EXIT_CODE=0 
 
 
 
@@ -37,13 +37,21 @@ log_error() {
 }
 
 list_update() {
-	echo "$1"
-	apt list --upgradable
+	log "$1" ""
+	apt list --upgradable 2>/dev/null | grep -v "Listing..." | while read -r line; do
+		log "$line" ""
+	done
 }
 
 upgrade_package() {
-	echo "$1"
-	sudo apt upgrade 
+	log "Upgrade started" ""
+	sudo apt upgrade -y >> "$LOG_FILE"
+      	if [ $? -ne 0 ]; then
+		log_error "Upgrade failed"
+		EXIT_CODE=1
+	else
+		log "Upgrade complete" ""
+	fi	
 }
 
 show_help() {
@@ -52,7 +60,8 @@ show_help() {
 	echo "This help contains these options:"
 	echo "-h, --help		Shows this help"
 	echo "--create-link		Soft link creation"
-	echo "etc"
+	echo "-a			Availabe for upgrade"
+	echo "-u			Upgrade file"
 }
 
 if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
@@ -64,8 +73,17 @@ create_soft_link() {
 	target_path="$(realpath "$0")"
 	link_path="/bin/linux_cli"
 	
-	sudo ln -s "$target_path" "$link_path"
-	echo "Soft link created: $link_path -> $target_path"
+	if [ -L "$link_path" ]; then
+		log "Soft link already exists:" "$link_path"
+	else
+		sudo ln -s "$target_path" "$link_path"
+		if [ $? -ne 0 ]; then
+			log_error "Failed to create soft link"
+			EXIT_CODE=2
+		else
+			log "Soft link created:" "$link_path -> $target_path"
+		fi
+	fi
 }
 
 if [ "$1" = "--create-link" ]; then
@@ -74,19 +92,54 @@ if [ "$1" = "--create-link" ]; then
 fi
 
 
-log "System" "OK" 
-log_error "Need restart"
-list_update "Packages for upgrade:"
-upgrade_package "Ugrade package"
+#log "System" "OK" 
+#log_error "Need restart"
+#list_update "Packages for upgrade:"
+#upgrade_package "Ugrade package"
 
-find_bee_files() {
-	find / -type f -regextype posix-extended -regex ".*/.*b.*e.*e.*"
-}
+#find_bee_files() {
+#	find / -type f -regextype posix-extended -regex ".*/.*b.*e.*e.*"
+#}
 
-if [ "$1" = "--find-bee" ]; then
-	find_bee_files
-	exit 0
-fi
+#if [ "$1" = "--find-bee" ]; then
+#	find_bee_files
+#	exit 0
+#fi
+
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		-a)
+			DO_LIST=true
+			;;
+		-u)
+			DO_UPGRADE=true
+			;;
+		--create-link)
+			DO_LINK=true
+			;;
+		-f)
+			shift
+			LOG_FILE="$1"
+			LOG_MODE="file"
+			if [ -e "$LOG_FILE" ]; then
+				echo "Log file "$LOG_FILE" already exists."
+			fi
+			;;
+		-h|--help)
+			show_help
+			exit 0
+			;;
+		*)
+			log_error "Unknow parameter. $1"
+			exit 99
+			;;
+	esac
+	shift
+done
 
 
+[ "$DO_LIST" = true ] && list_update
+[ "$DO_UPGRADE" = true ] && upgrade_package
+[ "$DO_LINK" = true ] && create_soft_link
 
+exit $EXIT_CODE
